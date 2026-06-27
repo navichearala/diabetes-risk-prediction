@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+.env
+.DS_Store
+.vscode/
+.idea/
+
+# MLflow runs (artifacts kept but local SQLite/cache excluded)
+mlruns/.trash/
+mlartifacts/
+
+# Large data files (raw CSV kept since it's small)
+*.parquet
+*.h5
+
+# OS
+Thumbs.db
+
+# MLflow local store (kept out of repo; users regenerate by running train.py)
+mlflow.db
+mlruns/
