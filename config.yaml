@@ -1,0 +1,52 @@
+# =====================================================================
+# Central configuration for the Diabetes Risk Prediction project.
+# Single source of truth — no magic numbers scattered across modules.
+# =====================================================================
+
+seed: 42
+
+data:
+  raw_path: data/diabetes_raw.csv
+  test_size: 0.2
+
+# Features where a clinical value of 0 is implausible -> treated as missing.
+zero_as_nan:
+  - Glucose
+  - BloodPressure
+  - SkinThickness
+  - Insulin
+  - BMI
+
+paths:
+  models_dir: models
+  reports_dir: reports
+  figures_dir: reports/figures
+  metrics_file: reports/metrics.json
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment_name: diabetes_readmission_prediction
+  registered_model_name: DiabetesReadmissionBest
+
+cv:
+  n_splits: 5
+  scoring: roc_auc
+
+# Hyperparameter search grids per model.
+models:
+  logistic_regression:
+    C: [0.1, 1, 10]
+    penalty: [l1, l2]
+  random_forest:
+    n_estimators: [200, 400]
+    max_depth: [null, 8, 14]
+    min_samples_split: [2, 5]
+  gradient_boosting:
+    n_estimators: [150, 300]
+    learning_rate: [0.05, 0.1]
+    max_depth: [3, 5]
+
+# Risk-band thresholds applied to predicted probability.
+risk_bands:
+  low_max: 0.30
+  moderate_max: 0.60

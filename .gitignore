@@ -21,6 +21,11 @@ mlartifacts/
 # OS
 Thumbs.db
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
 # MLflow local store (kept out of repo; users regenerate by running train.py)
 mlflow.db
 mlruns/

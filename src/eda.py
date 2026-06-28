@@ -4,6 +4,7 @@ Exploratory Data Analysis for the Diabetes Readmission Prediction project.
 Generates and saves visualizations: target distribution, correlation heatmap,
 feature distributions by outcome, BMI vs Glucose risk scatter, and ROC-ready stats.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,12 +13,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from config import CONFIG, resolve
 from data_preprocessing import clean_data, load_data
 
 sns.set_theme(style="whitegrid", palette="muted")
 
-ROOT = Path(__file__).resolve().parent.parent
-FIG_DIR = ROOT / "reports" / "figures"
+FIG_DIR = resolve(CONFIG["paths"]["figures_dir"])
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -59,8 +60,13 @@ def plot_feature_distributions(df: pd.DataFrame) -> None:
 def plot_glucose_bmi_scatter(df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(8, 6))
     sns.scatterplot(
-        data=df, x="Glucose", y="BMI", hue="Outcome",
-        palette={0: "#4C9F70", 1: "#D7263D"}, alpha=0.7, ax=ax,
+        data=df,
+        x="Glucose",
+        y="BMI",
+        hue="Outcome",
+        palette={0: "#4C9F70", 1: "#D7263D"},
+        alpha=0.7,
+        ax=ax,
     )
     ax.axvline(125, ls="--", color="grey", label="Diabetic glucose threshold")
     ax.axhline(30, ls="--", color="orange", label="Obesity BMI threshold")
@@ -81,4 +87,4 @@ def run_eda(data_path: str | Path) -> None:
 
 
 if __name__ == "__main__":
-    run_eda(ROOT / "data" / "diabetes_raw.csv")
+    run_eda(resolve(CONFIG["data"]["raw_path"]))

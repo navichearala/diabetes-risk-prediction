@@ -1,9 +1,13 @@
 """
-Data preprocessing module for the Diabetes Readmission Prediction project.
+Data preprocessing for the Diabetes Risk Prediction project.
 
-Loads the Pima Indians Diabetes dataset, treats clinically-impossible zeros
-as missing values, imputes them, scales features, and returns train/test splits.
+Key design choice: preprocessing (impute + scale) is packaged into a
+scikit-learn ``Pipeline`` so that the EXACT same transformation learned at
+training time is reused at inference time. This eliminates train/serve skew —
+the previous version hardcoded imputation medians in the predict script, which
+could silently drift from the training data.
 """
+
 from __future__ import annotations
 
 import logging
@@ -11,11 +15,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from config import CONFIG, resolve
+
 log = logging.getLogger(__name__)
 
 COLUMNS = [
@@ -31,7 +38,7 @@ COLUMNS = [
 ]
 
 # Features where a value of 0 is clinically implausible -> treat as missing.
-ZERO_AS_NAN = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
+ZERO_AS_NAN = CONFIG["zero_as_nan"]
 
 
 def load_data(path: str | Path) -> pd.DataFrame:
@@ -45,12 +52,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """Replace clinically-impossible zeros with NaN."""
     df = df.copy()
     df[ZERO_AS_NAN] = df[ZERO_AS_NAN].replace(0, np.nan)
-    log.info("Missing values after cleaning:\n%s", df.isna().sum().to_dict())
+    log.info("Missing values after cleaning: %s", df.isna().sum().to_dict())
     return df
 
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create clinically-meaningful derived features."""
+    """Create clinically-meaningful derived categorical features (one-hot)."""
     df = df.copy()
     df["BMI_Category"] = pd.cut(
         df["BMI"],
@@ -58,7 +65,9 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         labels=["Underweight", "Normal", "Overweight", "Obese"],
     )
     df["Age_Group"] = pd.cut(
-        df["Age"], bins=[0, 30, 45, 60, 120], labels=["Young", "Adult", "Middle", "Senior"]
+        df["Age"],
+        bins=[0, 30, 45, 60, 120],
+        labels=["Young", "Adult", "Middle", "Senior"],
     )
     df["Glucose_Risk"] = pd.cut(
         df["Glucose"],
@@ -69,27 +78,42 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def prepare(path: str | Path, test_size: float = 0.2, random_state: int = 42):
-    """Full preprocessing pipeline -> X_train, X_test, y_train, y_test, scaler."""
-    df = engineer_features(clean_data(load_data(path)))
+def build_preprocessor(feature_names: list[str]) -> ColumnTransformer:
+    """Return a ColumnTransformer that imputes (median) then scales all features.
 
-    y = df["Outcome"].astype(int)
-    X = df.drop(columns=["Outcome"])
-
-    imputer = SimpleImputer(strategy="median")
-    X_imp = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_imp, y, test_size=test_size, random_state=random_state, stratify=y
+    Wrapping this in a fitted transformer means inference reuses the learned
+    medians + scaling automatically — no hardcoded constants.
+    """
+    numeric_pipe = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+    return ColumnTransformer(
+        transformers=[("num", numeric_pipe, feature_names)],
+        remainder="drop",
+        verbose_feature_names_out=False,
     )
 
-    scaler = StandardScaler()
-    X_train_s = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
-    X_test_s = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
 
-    log.info("Train shape %s, Test shape %s", X_train_s.shape, X_test_s.shape)
-    return X_train_s, X_test_s, y_train, y_test, scaler
+def make_xy(path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
+    """Load -> clean -> engineer features, returning X (raw, unscaled) and y."""
+    df = engineer_features(clean_data(load_data(path)))
+    y = df["Outcome"].astype(int)
+    X = df.drop(columns=["Outcome"])
+    return X, y
+
+
+def split(X: pd.DataFrame, y: pd.Series, test_size: float | None = None, seed: int | None = None):
+    """Stratified train/test split using config defaults."""
+    test_size = test_size if test_size is not None else CONFIG["data"]["test_size"]
+    seed = seed if seed is not None else CONFIG["seed"]
+    return train_test_split(X, y, test_size=test_size, random_state=seed, stratify=y)
 
 
 if __name__ == "__main__":
-    prepare(Path(__file__).resolve().parent.parent / "data" / "diabetes_raw.csv")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    X, y = make_xy(resolve(CONFIG["data"]["raw_path"]))
+    X_tr, X_te, y_tr, y_te = split(X, y)
+    log.info("X_train %s | X_test %s", X_tr.shape, X_te.shape)
